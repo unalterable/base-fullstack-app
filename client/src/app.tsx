@@ -16,7 +16,12 @@ declare module '@tanstack/react-router' {
 
 const App = () => {
   const [queryClient] = React.useState(() => new QueryClient())
-  const [trpcClient] = React.useState(() => trpc.createClient({ links: [httpBatchLink({ url: import.meta.env.VITE_API_URL || 'http://localhost:3001/trpc', headers: () => ({ authorization: 'Bearer demo-token' }) })] }))
+  const [trpcClient] = React.useState(() => trpc.createClient({
+    links: [httpBatchLink({
+      url: 'http://localhost:3001/trpc',
+      headers: () => ({ authorization: 'Bearer demo-token' })
+    })]
+  }))
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>

@@ -1,4 +1,4 @@
-import React from 'react'
+import 'react'
 import { Outlet, createRootRoute } from '@tanstack/react-router'
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material'
 

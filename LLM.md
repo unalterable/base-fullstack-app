@@ -1,243 +1,295 @@
 # LLM Development Guidelines
 
+## ⚠️ CRITICAL: Working with Existing Projects
+
+**YOU ARE NOT CREATING A NEW PROJECT. YOU ARE WORKING WITH AN EXISTING CODEBASE.**
+
+**NEVER suggest complete file replacements for existing files.** The project already has:
+- `server/src/index.ts` (minimal, rarely needs changes)
+- `server/src/services/db.ts` (contains existing tables and operations)
+- `server/src/services/auth.ts` (authentication logic)
+- `server/src/domain/index.ts` (contains existing domain wiring)
+- `server/src/web/express.ts` (server setup)
+- `server/src/web/trpcRouter.ts` (contains existing endpoints)
+- Other domain files, services, and routes
+
+**When editing existing files:**
+- Request **specific additions** using `str_replace` or similar edit operations
+- Show exactly what to add and where to add it
+- Never output the entire file contents
+- Assume the file has content you haven't seen
+
+**When creating new features:**
+- ✅ Create NEW domain files (e.g., `domain/notesDomain.ts`)
+- ✅ Create NEW route files (e.g., `routes/notes.tsx`)
+- ✅ Create NEW service files if needed (e.g., `services/emailSvc.ts`)
+- ✅ Request EDITS to `domain/index.ts` to wire your new domain
+- ✅ Request EDITS to `services/db.ts` to add tables/operations
+- ✅ Request EDITS to `web/trpcRouter.ts` to add endpoints
+
+**Example - WRONG approach:**
+```typescript
+// ❌ DON'T DO THIS - Complete file replacement
+// domain/index.ts
+import { initAuthSvc } from '../services/auth'
+import { initDbSvc } from '../services/db'
+import { initTaskDomain } from './taskDomain'
+import { initNewDomain } from './newDomain'
+
+export const initDomain = async () => {
+  const dbSvc = await initDbSvc(...)
+  const authSvc = initAuthSvc()
+  const taskDomain = initTaskDomain(authSvc, dbSvc)
+  const newDomain = initNewDomain(authSvc, dbSvc)
+  return { ...taskDomain, ...newDomain }
+}
+```
+
+**Example - CORRECT approach:**
+```typescript
+// ✅ DO THIS - Request specific edits
+// Add to domain/index.ts:
+
+// 1. Add import after existing imports:
+import { initNewDomain } from './newDomain'
+
+// 2. Add initialization after existing domain initializations:
+const newDomain = initNewDomain(authSvc, dbSvc)
+
+// 3. Add to return statement spread (after existing domains):
+...newDomain,
+```
+
 ## Project Overview
 
-This is a full-stack TypeScript application using PostgreSQL, tRPC, React, TanStack Router, and Material-UI. The architecture follows a strict layered approach with functional programming principles and consistent formatting standards.
+Full-stack TypeScript: PostgreSQL, tRPC, React, TanStack Router, Material-UI. Layered architecture with functional programming.
 
-## Architecture Layers
+## Architecture
 
 ```
-server/
-├── src/
-│   ├── index.ts          # Entry point - initializes and wires domains
-│   ├── services/         # Database and infrastructure services
-│   │   ├── db.ts         # PostgreSQL CRUD operations
-│   │   └── auth.ts       # Authentication service
-│   ├── domain/           # Business logic with authentication
-│   └── web/              # Express and tRPC routing
-│       ├── express.ts    # Express server initialization
-│       └── trpcRouter.ts # tRPC endpoint definitions
+server/src/
+├── index.ts              # Entry point (minimal)
+├── services/             # Infrastructure
+│   ├── db.ts             # Database (edit to add tables/CRUD)
+│   ├── auth.ts           # Authentication
+│   └── *.ts              # New services (APIs, integrations)
+├── domain/
+│   ├── index.ts          # Central wiring (ADD service inits, domain imports)
+│   └── *Domain.ts        # Feature domains (NEW files)
+└── web/
+    ├── express.ts        # Server setup
+    └── trpcRouter.ts     # API endpoints (ADD here)
 
-client/
-├── src/
-│   ├── app.tsx           # React app setup and rendering
-│   ├── trpc.ts           # tRPC client and type utilities
-│   ├── components/       # Reusable React components
-│   │   └── State.tsx     # State render prop component
-│   └── routes/           # TanStack Router file-based routes
-│       ├── __root.tsx    # Root layout
-│       └── index.tsx     # Route components
+client/src/
+├── components/State.tsx  # State helper
+└── routes/*.tsx          # Pages (NEW files, auto-detected)
 ```
 
-## Stack Layers
+**Key principle**: New features = new files. Edit existing files only for wiring.
 
-1. **Database Layer** - PostgreSQL with functional CRUD operations
-2. **Domain Layer** - Business logic with authentication checks
-3. **API Layer** - tRPC endpoints with Zod validation
-4. **Frontend Layer** - React components with TanStack Router and MUI
+## Stack Flow
 
-## Adding New Functionality
+Services (Database, External APIs, etc.) → Domain → tRPC → Frontend
 
-### 1. Database Layer (services/db.ts)
+**Services** provide infrastructure - database access, external APIs, third-party integrations, or specialized functionality. Create new service files as needed.
 
-Define types and add to service return object:
+## Adding Functionality
+
+### 0. Service Layer (Optional - services/newService.ts)
+
+**Create new service file when you need:**
+- External API integrations (Stripe, SendGrid, OpenAI)
+- Specialized functionality (email, file storage, caching)
+- Third-party services
+- Additional infrastructure beyond database
+
+**Example service structure:**
 
 ```typescript
-type NewEntity = { id: string; field1: string; field2: number; createdBy: string; createdAt: string }
+import { SomeExternalLibrary } from 'some-library'
 
-// In initDbSvc function, add table creation:
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS new_entities (
-    id SERIAL PRIMARY KEY,
-    field1 VARCHAR(255) NOT NULL,
-    field2 INTEGER NOT NULL,
-    created_by VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )
-`)
-await pool.query('CREATE INDEX IF NOT EXISTS idx_new_entities_created_at ON new_entities(created_at)')
+export const initNewSvc = (config?: { apiKey?: string }) => {
+  const client = new SomeExternalLibrary({ apiKey: config?.apiKey || process.env.API_KEY })
+  
+  return {
+    doSomething: (param: string) => client.method(param).then(result => ({ data: result })),
+    doSomethingElse: async (param: number) => {
+      const result = await client.otherMethod(param)
+      return { success: true, result }
+    },
+  }
+}
 
-// Add mapper function:
-const mapNewEntity = (row: any): NewEntity => ({ id: row.id.toString(), field1: row.field1, field2: row.field2, createdBy: row.created_by, createdAt: row.created_at.toISOString() })
-
-// Add CRUD operations to return object:
-getAllNewEntities: () => pool.query('SELECT * FROM new_entities ORDER BY created_at DESC').then(res => res.rows.map(mapNewEntity)),
-getNewEntityById: (id: string) => pool.query('SELECT * FROM new_entities WHERE id = $1', [id]).then(res => res.rows.length > 0 ? mapNewEntity(res.rows[0]) : undefined),
-createNewEntity: (field1: string, field2: number, createdBy: string) => pool.query('INSERT INTO new_entities (field1, field2, created_by, created_at) VALUES ($1, $2, $3, $4) RETURNING *', [field1, field2, createdBy, new Date()]).then(res => mapNewEntity(res.rows[0])),
-updateNewEntity: (id: string, updates: Partial<{ field1: string; field2: number }>) => {
-  const fields: string[] = []
-  const values: any[] = []
-  let idx = 1
-  if (updates.field1 !== undefined) { fields.push(`field1 = $${idx++}`); values.push(updates.field1) }
-  if (updates.field2 !== undefined) { fields.push(`field2 = $${idx++}`); values.push(updates.field2) }
-  values.push(id)
-  return pool.query(`UPDATE new_entities SET ${fields.join(', ')} WHERE id = $${idx}`, values).then(res => res.rowCount && res.rowCount > 0 ? Promise.resolve() : Promise.reject(new Error(`No entity found with id ${id}`)))
-},
-deleteNewEntity: (id: string) => pool.query('DELETE FROM new_entities WHERE id = $1', [id]).then(res => res.rowCount && res.rowCount > 0 ? Promise.resolve() : Promise.reject(new Error(`No entity found with id ${id}`))),
+export type NewSvc = ReturnType<typeof initNewSvc>
 ```
 
-**Database Standards:**
-- Use parameterized queries ($1, $2) to prevent SQL injection
-- Return promises for all operations
-- Use functional .then() chains instead of async/await
-- Map database rows to clean external types
-- Handle errors with descriptive messages
-- Create indexes for frequently queried fields
+**Wire in domain/index.ts:**
 
-### 2. Domain Layer (domain/newEntityDomain.ts)
+```typescript
+import { initNewSvc } from '../services/newService'
 
-Create new domain file:
+export const initDomain = async () => {
+  const dbSvc = await initDbSvc(...)
+  const authSvc = initAuthSvc()
+  const newSvc = initNewSvc() // Initialize your new service
+  
+  const taskDomain = initTaskDomain(authSvc, dbSvc)
+  const entityDomain = initEntityDomain(authSvc, dbSvc, newSvc) // Pass to domains that need it
+  
+  return { ...taskDomain, ...entityDomain }
+}
+```
+
+**Service standards:**
+- Initialize with config or environment variables
+- Return object with methods
+- Handle external errors gracefully
+- Return clean, typed objects
+- Export service type
+
+### 1. Database (services/db.ts)
+
+**⚠️ This file EXISTS and contains other tables. Request EDITS to ADD your new operations.**
+
+**Request edits to add to the EXISTING file:**
+
+```typescript
+// 1. ADD type definition (at top with other types)
+type Entity = { id: string; field: string; createdBy: string; createdAt: string }
+
+// 2. ADD table creation in initDbSvc (after existing table creations)
+await pool.query(`CREATE TABLE IF NOT EXISTS entities (...)`)
+await pool.query('CREATE INDEX IF NOT EXISTS idx_entities_created_at ON entities(created_at)')
+
+// 3. ADD mapper function (with other mappers)
+const mapEntity = (row: any): Entity => ({ id: row.id.toString(), field: row.field, ... })
+
+// 4. ADD operations to the return object (alongside existing operations)
+getAllEntities: () => pool.query('SELECT * FROM entities').then(res => res.rows.map(mapEntity)),
+createEntity: (field: string, createdBy: string) => pool.query('INSERT INTO entities...').then(res => mapEntity(res.rows[0])),
+```
+
+**You are ADDING these to an existing file. Do not replace the entire file.**
+
+**Standards**: Parameterized queries, promise chains, mappers, descriptive errors.
+
+### 2. Domain (domain/entityDomain.ts)
+
+**Create new file:**
 
 ```typescript
 import { DbSvc } from '../services/db.js'
 import { AuthSvc } from '../services/auth.js'
 
-export const initNewEntityDomain = (authSvc: AuthSvc, dbSvc: DbSvc) => ({
-  getAllNewEntities: async (token: string) => {
+export const initEntityDomain = (authSvc: AuthSvc, dbSvc: DbSvc) => ({
+  getAllEntities: async (token: string) => {
     await authSvc.authenticateUserToken(token)
-    return dbSvc.getAllNewEntities()
+    return dbSvc.getAllEntities()
   },
-  getNewEntityById: async (token: string, id: string) => {
-    await authSvc.authenticateUserToken(token)
-    return dbSvc.getNewEntityById(id)
-  },
-  createNewEntity: async (token: string, field1: string, field2: number) => {
+  createEntity: async (token: string, field: string) => {
     const user = await authSvc.authenticateUserToken(token)
-    return dbSvc.createNewEntity(field1, field2, user.username)
+    return dbSvc.createEntity(field, user.username)
   },
-  updateNewEntity: async (token: string, id: string, field1?: string, field2?: number) => {
-    await authSvc.authenticateUserToken(token)
-    const updates = { ...(field1 !== undefined ? { field1 } : {}), ...(field2 !== undefined ? { field2 } : {}) }
-    return dbSvc.updateNewEntity(id, updates)
-  },
-  deleteNewEntity: async (token: string, id: string) => {
-    await authSvc.authenticateUserToken(token)
-    return dbSvc.deleteNewEntity(id)
-  }
 })
 
-export type NewEntityDomain = ReturnType<typeof initNewEntityDomain>
+export type EntityDomain = ReturnType<typeof initEntityDomain>
 ```
 
-Wire up in `index.ts`:
+**Standards**: Auth first, simple params, import only needed services.
+
+### 3. Wire Domain (domain/index.ts)
+
+**⚠️ This file EXISTS and contains other domains. Request EDITS to ADD your new domain. NEVER replace the entire file.**
+
+**Request three specific edits:**
+
+**Edit 1 - Add import at the top:**
+```typescript
+import { initEntityDomain } from './entityDomain'
+```
+
+**Edit 2 - Add initialization in initDomain function (after existing domain initializations):**
+```typescript
+const entityDomain = initEntityDomain(authSvc, dbSvc)
+```
+
+**Edit 3 - Add to return object (after existing domain spreads):**
+```typescript
+...entityDomain,
+```
+
+**CRITICAL**: You're making three small edits, not replacing the file. Other services and domains already exist in this file.
+
+### 4. tRPC (web/trpcRouter.ts)
+
+**⚠️ This file EXISTS with other endpoints. Request EDITS to ADD your endpoints to the existing router.**
+
+**Request edits to add to the router object (alongside existing endpoints):**
 
 ```typescript
-import { initNewEntityDomain } from './domain/newEntityDomain.js'
-
-const newEntityDomain = initNewEntityDomain(authSvc, dbSvc)
-await initExpress(taskDomain, newEntityDomain) // Pass to express
+allEntities: t.procedure.query(({ ctx }) => domain.getAllEntities(ctx.token)),
+createEntity: t.procedure.input(z.object({ field: z.string() })).mutation(({ ctx, input }) => domain.createEntity(ctx.token, input.field).then(() => 'OK')),
 ```
 
-**Domain Standards:**
-- Always authenticate first before any database operations
-- Pass authenticated user info to database layer
-- Use simple parameter lists with primitive types
-- Return domain objects directly from database layer
-- Let errors bubble up to API layer
+**These are ADDITIONS to the existing t.router({ ... }) object. Do not replace the entire file.**
 
-### 3. tRPC API Layer (web/trpcRouter.ts)
+**Standards**: One line each, `domain.functionName()`, Zod validation, mutations return 'OK'.
 
-Add endpoints (one line each):
+### 5. Frontend (routes/entities.tsx)
 
-```typescript
-allNewEntities: t.procedure.query(({ ctx }) => newEntityDomain.getAllNewEntities(ctx.token)),
-newEntityById: t.procedure.input(z.object({ id: z.string() })).query(({ ctx, input }) => newEntityDomain.getNewEntityById(ctx.token, input.id)),
-createNewEntity: t.procedure.input(z.object({ field1: z.string(), field2: z.number() })).mutation(({ ctx, input }) => newEntityDomain.createNewEntity(ctx.token, input.field1, input.field2).then(() => 'OK')),
-updateNewEntity: t.procedure.input(z.object({ id: z.string(), field1: z.string().optional(), field2: z.number().optional() })).mutation(({ ctx, input }) => newEntityDomain.updateNewEntity(ctx.token, input.id, input.field1, input.field2).then(() => 'OK')),
-deleteNewEntity: t.procedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => newEntityDomain.deleteNewEntity(ctx.token, input.id).then(() => 'OK')),
-```
-
-**tRPC Standards:**
-- One line per endpoint definition
-- Use Zod schemas for input validation
-- Queries return data directly, mutations return 'OK'
-- Let domain layer errors propagate naturally
-- Keep endpoint logic minimal - delegate to domain
-
-### 4. Frontend Layer (routes/yourRoute.tsx)
-
-Create route component with render prop patterns:
+**Create new file:**
 
 ```typescript
 import React from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Box, Typography, Button, Table, TableHead, TableRow, TableCell, TableBody, Dialog, DialogTitle, DialogContent, DialogActions, TextField, IconButton } from '@mui/material'
-import { Add, Edit, Delete } from '@mui/icons-material'
+import { Box, Button, Table, TableBody, TableCell, TableHead, TableRow, IconButton } from '@mui/material'
+import { Add, Delete } from '@mui/icons-material'
 import { trpc, ExtractTrpcOutput } from '../trpc'
 import { State } from '../components/State'
 
-const NewEntityQueries = ({ children }: { children: (props: { entities: NonNullable<ExtractTrpcOutput<typeof trpc.allNewEntities.useQuery>>; refetchEntities: () => void }) => React.ReactNode }) => {
-  const entitiesQuery = trpc.allNewEntities.useQuery()
-  return <>{children({ entities: entitiesQuery.data || [], refetchEntities: entitiesQuery.refetch })}</>
+const EntityQueries = ({ children }: { children: (props: { entities: NonNullable<ExtractTrpcOutput<typeof trpc.allEntities.useQuery>>; refetch: () => void }) => React.ReactNode }) => {
+  const query = trpc.allEntities.useQuery()
+  return <>{children({ entities: query.data || [], refetch: query.refetch })}</>
 }
 
-const NewEntityMutations = ({ children }: { children: (props: { createEntity: ReturnType<typeof trpc.createNewEntity.useMutation>['mutateAsync']; updateEntity: ReturnType<typeof trpc.updateNewEntity.useMutation>['mutateAsync']; deleteEntity: ReturnType<typeof trpc.deleteNewEntity.useMutation>['mutateAsync']; isCreating: boolean; isUpdating: boolean; isDeleting: boolean }) => React.ReactNode }) => {
-  const createMutation = trpc.createNewEntity.useMutation()
-  const updateMutation = trpc.updateNewEntity.useMutation()
-  const deleteMutation = trpc.deleteNewEntity.useMutation()
-  return <>{children({ createEntity: createMutation.mutateAsync, updateEntity: updateMutation.mutateAsync, deleteEntity: deleteMutation.mutateAsync, isCreating: createMutation.isPending, isUpdating: updateMutation.isPending, isDeleting: deleteMutation.isPending })}</>
+const EntityMutations = ({ children }: { children: (props: { create: ReturnType<typeof trpc.createEntity.useMutation>['mutateAsync']; delete: ReturnType<typeof trpc.deleteEntity.useMutation>['mutateAsync'] }) => React.ReactNode }) => {
+  const createMut = trpc.createEntity.useMutation()
+  const deleteMut = trpc.deleteEntity.useMutation()
+  return <>{children({ create: createMut.mutateAsync, delete: deleteMut.mutateAsync })}</>
 }
 
-const EntityManager = () => (
-  <NewEntityQueries>
-    {({ entities, refetchEntities }) => (
-      <NewEntityMutations>
-        {({ createEntity, updateEntity, deleteEntity }) => (
-          <State initialState={{ modalOpen: false, editingEntity: null as NonNullable<ExtractTrpcOutput<typeof trpc.allNewEntities.useQuery>>[number] | null }}>
-            {({ state: mainState, setState: setMainState }) => (
+const Entities = () => (
+  <EntityQueries>
+    {({ entities, refetch }) => (
+      <EntityMutations>
+        {({ create, delete: del }) => (
+          <State initialState={{ modalOpen: false }}>
+            {({ state, setState }) => (
               <Box sx={{ p: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                  <Typography variant="h4">Entity Manager</Typography>
-                  <Button onClick={() => setMainState({ modalOpen: true, editingEntity: null })} variant="contained" startIcon={<Add />}>Add Entity</Button>
-                </Box>
+                <Button onClick={() => setState({ modalOpen: true })} startIcon={<Add />}>Add</Button>
                 <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Field 1</TableCell>
-                      <TableCell>Field 2</TableCell>
-                      <TableCell align="right">Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
+                  <TableHead><TableRow><TableCell>Field</TableCell><TableCell align="right">Actions</TableCell></TableRow></TableHead>
                   <TableBody>
-                    {entities.map((entity) => (
-                      <TableRow key={entity.id}>
-                        <TableCell>{entity.field1}</TableCell>
-                        <TableCell>{entity.field2}</TableCell>
+                    {entities.map((e) => (
+                      <TableRow key={e.id}>
+                        <TableCell>{e.field}</TableCell>
                         <TableCell align="right">
-                          <IconButton onClick={() => setMainState({ editingEntity: entity, modalOpen: true })} size="small"><Edit /></IconButton>
-                          <IconButton onClick={() => deleteEntity({ id: entity.id }).then(() => refetchEntities())} size="small" color="error"><Delete /></IconButton>
+                          <IconButton onClick={() => del({ id: e.id }).then(() => refetch())} size="small"><Delete /></IconButton>
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-                <Dialog open={mainState.modalOpen} onClose={() => setMainState({ modalOpen: false })} maxWidth="sm" fullWidth>
-                  <State initialState={{ field1: mainState.editingEntity?.field1 || '', field2: mainState.editingEntity?.field2?.toString() || '' }}>
-                    {({ state, setState }) => (
-                      <>
-                        <DialogTitle>{mainState.editingEntity ? 'Edit Entity' : 'Add New Entity'}</DialogTitle>
-                        <DialogContent>
-                          <TextField value={state.field1} onChange={(e) => setState({ field1: e.target.value })} label="Field 1" fullWidth margin="normal" />
-                          <TextField value={state.field2} onChange={(e) => setState({ field2: e.target.value })} label="Field 2" type="number" fullWidth margin="normal" />
-                        </DialogContent>
-                        <DialogActions>
-                          <Button onClick={() => setMainState({ modalOpen: false })}>Cancel</Button>
-                          <Button onClick={() => { const field2Value = parseFloat(state.field2); (mainState.editingEntity ? updateEntity({ id: mainState.editingEntity.id, field1: state.field1, field2: field2Value }) : createEntity({ field1: state.field1, field2: field2Value })).then(() => { refetchEntities(); setMainState({ modalOpen: false }) }) }} variant="contained" disabled={!state.field1 || !state.field2}>{mainState.editingEntity ? 'Update' : 'Add'}</Button>
-                        </DialogActions>
-                      </>
-                    )}
-                  </State>
-                </Dialog>
               </Box>
             )}
           </State>
         )}
-      </NewEntityMutations>
+      </EntityMutations>
     )}
-  </NewEntityQueries>
+  </EntityQueries>
 )
 
-export const Route = createFileRoute('/entity-manager')({ component: EntityManager })
+export const Route = createFileRoute('/entities')({ component: Entities })
 ```
 
 ## Formatting Standards
@@ -359,127 +411,82 @@ import { State } from '../components/State'
 </State>
 ```
 
-## File Structure Patterns
+## Common Mistakes
 
-### Server Files
+**Server:**
+- ❌ **CRITICAL: Replacing entire files instead of requesting specific edits**
+- ❌ Overwriting domain/index.ts instead of adding import + init + spread
+- ❌ Overwriting services/db.ts instead of adding types + tables + operations
+- ❌ Overwriting web/trpcRouter.ts instead of adding endpoints
+- ❌ Missing auth in domain functions
+- ❌ Business logic in DB layer
+- ❌ Not understanding that files already exist with other content
 
-**index.ts** - Entry point only, no business logic:
-```typescript
-import { initDbSvc } from './services/db.js'
-import { initAuthSvc } from './services/auth.js'
-import { initEntityDomain } from './domain/entityDomain.js'
-import { initExpress } from './web/express.js'
+**Client:**
+- ❌ `any` type
+- ❌ `useState`, `useCallback`, `useMemo`
+- ❌ Blank lines, comments
+- ❌ State mutation
 
-const start = async () => {
-  const dbSvc = await initDbSvc(process.env.DATABASE_URL || 'postgresql://...')
-  const authSvc = initAuthSvc()
-  const entityDomain = initEntityDomain(authSvc, dbSvc)
-  await initExpress(entityDomain)
-}
+**The #1 mistake: Suggesting complete file replacements when you should request incremental edits.**
 
-start().catch(console.error)
-```
+## Understanding Wiring
 
-**services/db.ts** - Pure database operations:
-- No business logic
-- Return promises
-- Map database types to external types
-- Handle errors with descriptive messages
+**Flow:**
+1. services/*.ts - Edit existing (db) or create new (APIs, integrations)
+2. domain/newDomain.ts - New file for business logic
+3. domain/index.ts - Edit to wire (init services, import domains, init domains with needed services, spread)
+4. web/trpcRouter.ts - Edit to add endpoints
+5. routes/page.tsx - New file (auto-detected by Vite)
 
-**domain/*.ts** - Business logic:
-- Authentication first
-- Call database service
-- Simple parameters
-- Export domain type
+**Key**: `domain/index.ts` initializes all services and combines all domains into single `domain` object for tRPC.
 
-**web/trpcRouter.ts** - API endpoints:
-- One line per endpoint
-- Zod validation
-- Delegate to domain
-- No business logic
+**Service patterns:**
+- Database access (db.ts) - Usually edited, rarely need multiple
+- External APIs (stripe.ts, sendgrid.ts) - Create new files as needed
+- Infrastructure (cache.ts, storage.ts) - Create when needed
+- Pass only needed services to each domain
 
-**web/express.ts** - Server setup:
-- Initialize Express
-- Setup middleware
-- Create tRPC router
-- Start server
+## Workflow Summary
 
-### Client Files
+**When adding a new feature:**
 
-**app.tsx** - Single entry point:
-- React root
-- QueryClient setup
-- tRPC client setup
-- Router provider
+1. **Create new files** for new functionality:
+   - Domain file: `domain/yourFeatureDomain.ts` (NEW FILE)
+   - Route file: `routes/yourFeature.tsx` (NEW FILE)
+   - Service file: `services/yourService.ts` (NEW FILE - if needed)
 
-**trpc.ts** - tRPC client config:
-- Create tRPC React client
-- Export `ExtractTrpcOutput` type utility
-- No other logic
+2. **Request edits** to existing files for wiring:
+   - `services/db.ts` - ADD types, tables, operations
+   - `domain/index.ts` - ADD import, init, spread (3 separate edits)
+   - `web/trpcRouter.ts` - ADD endpoints to router
 
-**components/State.tsx** - State render prop:
-- Generic state management
-- Prevents unnecessary re-renders
-- No modifications needed
+3. **NEVER suggest replacing** these existing files:
+   - `server/src/index.ts`
+   - `server/src/services/db.ts`
+   - `server/src/services/auth.ts`
+   - `server/src/domain/index.ts`
+   - `server/src/web/express.ts`
+   - `server/src/web/trpcRouter.ts`
 
-**routes/*.tsx** - Route components:
-- Query render props at top
-- Mutation render props second
-- State management third
-- Single export with `createFileRoute`
+**Remember**: The project exists. You're extending it, not creating it.
 
-## Common Mistakes to Avoid
+## Quick Example
 
-### Server Side
-- ❌ Business logic in database layer
-- ❌ Database calls in tRPC router
-- ❌ Express imports in index.ts
-- ❌ Missing authentication in domain layer
-- ❌ Complex types in function signatures
+**Add notes feature with email notifications:**
 
-### Client Side
-- ❌ Using `any` type anywhere
-- ❌ Direct use of `useState`, `useCallback`, `useMemo`
-- ❌ Extracting handlers unnecessarily
-- ❌ Multiple line breaks or blank lines
-- ❌ Comments in code
-- ❌ Mutating state directly
-- ❌ Using `onSuccess`/`onError` in render prop components
+1. **(Optional) CREATE** `services/emailSvc.ts` - New email integration service
+2. **EDIT** `services/db.ts` - ADD Note type, table creation, CRUD operations
+3. **CREATE** `domain/notesDomain.ts` - New domain file with auth + business logic
+4. **EDIT** `domain/index.ts` - Three edits: ADD import, ADD init, ADD spread
+5. **EDIT** `web/trpcRouter.ts` - ADD note endpoints to existing router
+6. **CREATE** `routes/notes.tsx` - New UI file
 
-## Type Safety Checklist
+**Notice**: Steps 1, 3, 6 are NEW files. Steps 2, 4, 5 are EDITS to existing files.
 
-When you see `any`:
-1. Query results → `ExtractTrpcOutput<typeof trpc.query.useQuery>`
-2. Arrays → Wrap with `NonNullable<...>`
-3. Array items → Add `[number]`
-4. Optional items → Add `| null`
-5. Mutations → `ReturnType<typeof trpc.mutation.useMutation>['mutateAsync']`
-
-## Example: Adding a Notes Feature
-
-**1. Database** (`services/db.ts`):
-- Add `Note` type
-- Create `notes` table with indexes
-- Add CRUD functions to return object
-
-**2. Domain** (`domain/notesDomain.ts`):
-- Create `initNotesDomain`
-- Add authentication to all functions
-- Export `NotesDomain` type
-
-**3. Wire up** (`index.ts`):
-- Initialize `notesDomain`
-- Pass to `initExpress`
-
-**4. tRPC** (`web/trpcRouter.ts`):
-- Add one-line endpoints
-- Use Zod validation
-- Return 'OK' for mutations
-
-**5. Frontend** (`routes/notes.tsx`):
-- Create `NoteQueries` render prop
-- Create `NoteMutations` render prop
-- Build component with `<State>`
-- Export with `createFileRoute`
-
-Each layer follows established patterns, ensuring consistency across the entire stack.
+**Never:**
+- Use `any`
+- Use React hooks directly
+- Add unneeded blank lines
+- Write comments
+- Suggest an overwrite to an existing files

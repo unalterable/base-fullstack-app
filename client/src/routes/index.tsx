@@ -5,7 +5,7 @@ import { Add, Edit, Delete } from '@mui/icons-material'
 import { trpc, ExtractTrpcOutput } from '../trpc'
 import { State } from '../components/State'
 
-const TaskQueries = ({ children }: { children: (props: { tasks: NonNullable<ExtractTrpcOutput<typeof trpc.allTasks.useQuery>>; refetchTasks: () => void }) => React.ReactNode }) => {
+const TaskQueries = ({ children }: { children: (props: { tasks: ExtractTrpcOutput<typeof trpc.allTasks.useQuery>; refetchTasks: () => void }) => React.ReactNode }) => {
   const tasksQuery = trpc.allTasks.useQuery()
   return <>{children({ tasks: tasksQuery.data || [], refetchTasks: tasksQuery.refetch })}</>
 }
@@ -26,7 +26,7 @@ const TaskManager = () => (
             {({ state: mainState, setState: setMainState }) => (
               <Box sx={{ p: 3 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                  <Typography variant="h4">Task Manager</Typography>
+                  <Typography variant="h4">Task Manager!</Typography>
                   <Button onClick={() => setMainState({ modalOpen: true, editingTask: null })} variant="contained" startIcon={<Add />}>Add Task</Button>
                 </Box>
                 <Table>
@@ -39,7 +39,7 @@ const TaskManager = () => (
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {tasks.map((task) => (
+                    {tasks?.map((task) => (
                       <TableRow key={task.id}>
                         <TableCell><Checkbox checked={task.completed} onChange={(e) => updateTask({ id: task.id, completed: e.target.checked }).then(() => refetchTasks())} /></TableCell>
                         <TableCell>{task.title}</TableCell>
@@ -63,7 +63,13 @@ const TaskManager = () => (
                         </DialogContent>
                         <DialogActions>
                           <Button onClick={() => setMainState({ modalOpen: false })}>Cancel</Button>
-                          <Button onClick={() => { (mainState.editingTask ? updateTask({ id: mainState.editingTask.id, title: state.title, description: state.description }) : createTask({ title: state.title, description: state.description })).then(() => { refetchTasks(); setMainState({ modalOpen: false }) }) }} variant="contained" disabled={!state.title || !state.description}>{mainState.editingTask ? 'Update' : 'Add'}</Button>
+                          <Button
+                            onClick={() => {
+                              (mainState.editingTask
+                                ? updateTask({ id: mainState.editingTask.id, title: state.title, description: state.description })
+                                : createTask({ title: state.title, description: state.description })
+                              ).then(() => { refetchTasks(); setMainState({ modalOpen: false }) })
+                            }} variant="contained" disabled={!state.title || !state.description}>{mainState.editingTask ? 'Update' : 'Add'}</Button>
                         </DialogActions>
                       </>
                     )}

@@ -1,11 +1,11 @@
 import express from 'express'
 import cors from 'cors'
 import { createExpressMiddleware } from '@trpc/server/adapters/express'
-import { createTrpcRouter } from './trpcRouter.js'
-import { TaskDomain } from '../domain/taskDomain.js'
+import { createTrpcRouter } from './trpcRouter'
+import { Domain } from '../domain'
 
-export const initExpress = (taskDomain: TaskDomain) => {
-  const trpcRouter = createTrpcRouter(taskDomain)
+export const initExpress = (domain: Domain) => {
+  const trpcRouter = createTrpcRouter(domain)
   const app = express()
   app.use(cors())
   app.use('/trpc', createExpressMiddleware({ router: trpcRouter, createContext: ({ req }) => ({ token: req.headers.authorization?.replace('Bearer ', '') || '' }) }))
