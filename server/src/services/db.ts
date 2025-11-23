@@ -27,6 +27,7 @@ export const initDbSvc = async (connectionString: string) => {
     created_by TEXT NOT NULL)
     `)
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)')
+
   await pool.query('CREATE INDEX IF NOT EXISTS idx_bookmarks_created_by ON bookmarks(created_by)')
   await pool.query('CREATE INDEX IF NOT EXISTS idx_bookmarks_tags ON bookmarks USING GIN(tags)')
 
